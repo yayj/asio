@@ -53,6 +53,20 @@
 # include "asio/handler_type.hpp"
 #endif // defined(ASIO_ENABLE_HANDLER_TYPE_REQUIREMENTS)
 
+#if !defined(ASIO_DISABLE_MOVABLE_HANDLER_TYPE_CHECK)
+# if defined(ASIO_ENABLE_HANDLER_TYPE_REQUIREMENTS_ASSERT)
+#  if defined(ASIO_HAS_VARIADIC_TEMPLATES)
+#   if defined(ASIO_HAS_STD_TYPE_TRAITS)
+#    if defined(ASIO_HAS_CONSTEXPR)
+#     include <tuple>
+#     include <type_traits>
+#     define ASIO_MOVABLE_HANDLER_TYPE_CHECK 1
+#    endif // defined(ASIO_HAS_CONSTEXPR)
+#   endif // defined(ASIO_HAS_STD_TYPE_TRAITS)
+#  endif // defined(ASIO_HAS_VARIADIC_TEMPLATES)
+# endif // defined(ASIO_ENABLE_HANDLER_TYPE_REQUIREMENTS_ASSERT)
+#endif // !defined(ASIO_DISABLE_MOVABLE_HANDLER_TYPE_CHECK)
+
 // Newer gcc, clang need special treatment to suppress unused typedef warnings.
 #if defined(__clang__) && (__clang_major__ >= 7)
 # define ASIO_UNUSED_TYPEDEF __attribute__((__unused__))
@@ -120,6 +134,8 @@ char (&two_arg_move_handler_test(Handler, ...))[2];
 #  define ASIO_HANDLER_TYPE_REQUIREMENTS_ASSERT(expr, msg)
 
 # endif // defined(ASIO_ENABLE_HANDLER_TYPE_REQUIREMENTS_ASSERT)
+
+# if !defined(ASIO_MOVABLE_HANDLER_TYPE_CHECK)
 
 template <typename T> T& lvref();
 template <typename T> T& lvref(T);
@@ -501,6 +517,138 @@ struct handler_type_requirements
           asio_true_handler_type>()( \
             asio::detail::lvref<const asio::error_code>()), \
         char(0))> ASIO_UNUSED_TYPEDEF
+
+# else // !defined(ASIO_MOVABLE_HANDLER_TYPE_CHECK)
+
+template <typename Handler, typename Ret, typename... Args> struct handler_type_checker {
+  static constexpr auto fp = static_cast<std::remove_reference_t<Handler>*>(nullptr);
+  template <typename... Params> static constexpr bool check(Params... params)
+  {
+    using R = decltype((*fp)(std::forward<Args>(*params)...));
+    return std::is_same<R, Ret>::value;
+  }
+};
+
+template <typename Handler, typename Ret, std::size_t index, typename... Args>
+struct handler_arguments_iterator {
+  using Arg = std::tuple_element_t<index, std::tuple<Args...>>;
+  using NextIter = handler_arguments_iterator<Handler, Ret, index-1, Args...>;
+  template <typename... Params> static constexpr bool next(Params... params)
+  {
+    return NextIter::next(static_cast<std::remove_reference_t<Arg>*>(nullptr), params...);
+  }
+};
+
+template <typename Handler, typename Ret, typename... Args>
+struct handler_arguments_iterator<Handler, Ret, 0, Args...> {
+  using Arg = std::tuple_element_t<0, std::tuple<Args...>>;
+  template <typename... Params> static constexpr bool next(Params... params)
+  {
+    return handler_type_checker<Handler, Ret, Args...>::check(
+      static_cast<std::remove_reference_t<Arg>*>(nullptr),
+      params...
+    );
+  }
+};
+
+template <typename Ret, typename... Args> struct handler_type_requirement {
+  template <typename Handler> static constexpr bool check()
+  {
+    return handler_arguments_iterator<Handler, Ret, sizeof...(Args)-1, Args...>::next();
+  }
+};
+
+template <typename Ret> struct handler_type_requirement<Ret> {
+  template <typename Handler> static constexpr bool check()
+  {
+    return handler_type_checker<Handler, Ret>::check();
+  }
+};
+
+#define ASIO_COMPLETION_HANDLER_CHECK(handler_type, handler) \
+  using asio::detail::handler_type_requirement; \
+  static_assert(handler_type_requirement<void>::check<decltype(handler)>(), \
+    "CompletionHandler type requirements not met"); int
+
+#define ASIO_READ_HANDLER_CHECK(handler_type, handler) \
+  using asio::detail::handler_type_requirement; \
+  static_assert( \
+    handler_type_requirement<void, asio::error_code, std::size_t>::check<decltype(handler)>(), \
+    "ReadHandler type requirements not met"); int
+
+#define ASIO_WRITE_HANDLER_CHECK(handler_type, handler) \
+  using asio::detail::handler_type_requirement; \
+  static_assert( \
+    handler_type_requirement<void, asio::error_code, std::size_t>::check<decltype(handler)>(), \
+    "WriteHandler type requirements not met"); int
+
+#define ASIO_ACCEPT_HANDLER_CHECK(handler_type, handler) \
+  using asio::detail::handler_type_requirement; \
+  static_assert( \
+    handler_type_requirement<void, asio::error_code>::check<decltype(handler)>(), \
+    "AcceptHandler type requirements not met"); int
+
+#define ASIO_MOVE_ACCEPT_HANDLER_CHECK(handler_type, handler, socket_type) \
+  using asio::detail::handler_type_requirement; \
+  static_assert( \
+    handler_type_requirement<void, asio::error_code, socket_type>::template check<decltype(handler)>(), \
+    "MoveAcceptHandler type requirements not met"); int
+
+#define ASIO_CONNECT_HANDLER_CHECK(handler_type, handler) \
+  using asio::detail::handler_type_requirement; \
+  static_assert( \
+    handler_type_requirement<void, asio::error_code>::check<decltype(handler)>(), \
+    "ConnectHandler type requirements not met"); int
+
+#define ASIO_RANGE_CONNECT_HANDLER_CHECK(handler_type, handler, endpoint_type) \
+  using asio::detail::handler_type_requirement; \
+  static_assert( \
+    handler_type_requirement<void, asio::error_code, endpoint_type>::template check<decltype(handler)>(), \
+    "RangeConnectHandler type requirements not met"); int
+
+#define ASIO_ITERATOR_CONNECT_HANDLER_CHECK(handler_type, handler, iter_type) \
+  using asio::detail::handler_type_requirement; \
+  static_assert( \
+    handler_type_requirement<void, asio::error_code, iter_type>::template check<decltype(handler)>(), \
+    "IteratorConnectHandler type requirements not met"); int
+
+#define ASIO_RESOLVE_HANDLER_CHECK(handler_type, handler, range_type) \
+  using asio::detail::handler_type_requirement; \
+  static_assert( \
+    handler_type_requirement<void, asio::error_code, range_type>::template check<decltype(handler)>(), \
+    "ResolveHandler type requirements not met"); int
+
+#define ASIO_WAIT_HANDLER_CHECK(handler_type, handler) \
+  using asio::detail::handler_type_requirement; \
+  static_assert( \
+    handler_type_requirement<void, asio::error_code>::check<decltype(handler)>(), \
+    "WaitHandler type requirements not met"); int
+
+#define ASIO_SIGNAL_HANDLER_CHECK(handler_type, handler) \
+  using asio::detail::handler_type_requirement; \
+  static_assert( \
+    handler_type_requirement<void, asio::error_code, int>::check<decltype(handler)>(), \
+    "SignalHandler type requirements not met"); int
+
+#define ASIO_HANDSHAKE_HANDLER_CHECK(handler_type, handler) \
+  using asio::detail::handler_type_requirement; \
+  static_assert( \
+    handler_type_requirement<void, asio::error_code>::check<decltype(handler)>(), \
+    "HandshakeHandler type requirements not met"); int
+
+#define ASIO_BUFFERED_HANDSHAKE_HANDLER_CHECK(handler_type, handler) \
+  using asio::detail::handler_type_requirement; \
+  static_assert( \
+    handler_type_requirement<void, asio::error_code, std::size_t>::check<decltype(handler)>(), \
+    "BufferedHandshakeHandler type requirements not met"); int
+
+#define ASIO_SHUTDOWN_HANDLER_CHECK(handler_type, handler) \
+  using asio::detail::handler_type_requirement; \
+  static_assert( \
+    handler_type_requirement<void, asio::error_code>::check<decltype(handler)>(), \
+    "ShutdownHandler type requirements not met"); int
+
+# endif // !defined(ASIO_MOVABLE_HANDLER_TYPE_CHECK)
 
 #else // !defined(ASIO_ENABLE_HANDLER_TYPE_REQUIREMENTS)
 
