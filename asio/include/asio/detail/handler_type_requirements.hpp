@@ -567,85 +567,99 @@ template <typename Ret> struct handler_type_requirement<Ret> {
 
 #define ASIO_COMPLETION_HANDLER_CHECK(handler_type, handler) \
   using asio::detail::handler_type_requirement; \
-  static_assert(handler_type_requirement<void>::check<decltype(handler)>(), \
+  using asio_true_handler_type = ASIO_HANDLER_TYPE(handler_type, void()); \
+  static_assert(handler_type_requirement<void>::check<asio_true_handler_type>(), \
     "CompletionHandler type requirements not met"); int
 
 #define ASIO_READ_HANDLER_CHECK(handler_type, handler) \
   using asio::detail::handler_type_requirement; \
+  using asio_true_handler_type = ASIO_HANDLER_TYPE(handler_type, void(asio::error_code, std::size_t)); \
   static_assert( \
-    handler_type_requirement<void, asio::error_code, std::size_t>::check<decltype(handler)>(), \
+    handler_type_requirement<void, asio::error_code, std::size_t>::check<asio_true_handler_type>(), \
     "ReadHandler type requirements not met"); int
 
 #define ASIO_WRITE_HANDLER_CHECK(handler_type, handler) \
   using asio::detail::handler_type_requirement; \
+  using asio_true_handler_type = ASIO_HANDLER_TYPE(handler_type, void(asio::error_code, std::size_t)); \
   static_assert( \
-    handler_type_requirement<void, asio::error_code, std::size_t>::check<decltype(handler)>(), \
+    handler_type_requirement<void, asio::error_code, std::size_t>::check<asio_true_handler_type>(), \
     "WriteHandler type requirements not met"); int
 
 #define ASIO_ACCEPT_HANDLER_CHECK(handler_type, handler) \
   using asio::detail::handler_type_requirement; \
+  using asio_true_handler_type = ASIO_HANDLER_TYPE(handler_type, void(asio::error_code)); \
   static_assert( \
-    handler_type_requirement<void, asio::error_code>::check<decltype(handler)>(), \
+    handler_type_requirement<void, asio::error_code>::check<asio_true_handler_type>(), \
     "AcceptHandler type requirements not met"); int
 
 #define ASIO_MOVE_ACCEPT_HANDLER_CHECK(handler_type, handler, socket_type) \
   using asio::detail::handler_type_requirement; \
+  using asio_true_handler_type = ASIO_HANDLER_TYPE(handler_type, void(asio::error_code, socket_type)); \
   static_assert( \
-    handler_type_requirement<void, asio::error_code, socket_type>::template check<decltype(handler)>(), \
+    handler_type_requirement<void, asio::error_code, socket_type>::template check<asio_true_handler_type>(), \
     "MoveAcceptHandler type requirements not met"); int
 
 #define ASIO_CONNECT_HANDLER_CHECK(handler_type, handler) \
   using asio::detail::handler_type_requirement; \
+  using asio_true_handler_type = ASIO_HANDLER_TYPE(handler_type, void(asio::error_code)); \
   static_assert( \
-    handler_type_requirement<void, asio::error_code>::check<decltype(handler)>(), \
+    handler_type_requirement<void, asio::error_code>::check<asio_true_handler_type>(), \
     "ConnectHandler type requirements not met"); int
 
 #define ASIO_RANGE_CONNECT_HANDLER_CHECK(handler_type, handler, endpoint_type) \
   using asio::detail::handler_type_requirement; \
+  using asio_true_handler_type = ASIO_HANDLER_TYPE(handler_type, void(asio::error_code, endpoint_type)); \
   static_assert( \
-    handler_type_requirement<void, asio::error_code, endpoint_type>::template check<decltype(handler)>(), \
+    handler_type_requirement<void, asio::error_code, endpoint_type>::template check<asio_true_handler_type>(), \
     "RangeConnectHandler type requirements not met"); int
 
 #define ASIO_ITERATOR_CONNECT_HANDLER_CHECK(handler_type, handler, iter_type) \
   using asio::detail::handler_type_requirement; \
+  using asio_true_handler_type = ASIO_HANDLER_TYPE(handler_type, void(asio::error_code, iter_type)); \
   static_assert( \
-    handler_type_requirement<void, asio::error_code, iter_type>::template check<decltype(handler)>(), \
+    handler_type_requirement<void, asio::error_code, iter_type>::template check<asio_true_handler_type>(), \
     "IteratorConnectHandler type requirements not met"); int
 
 #define ASIO_RESOLVE_HANDLER_CHECK(handler_type, handler, range_type) \
   using asio::detail::handler_type_requirement; \
+  using asio_true_handler_type = ASIO_HANDLER_TYPE(handler_type, void(asio::error_code, range_type)); \
   static_assert( \
-    handler_type_requirement<void, asio::error_code, range_type>::template check<decltype(handler)>(), \
+    handler_type_requirement<void, asio::error_code, range_type>::template check<asio_true_handler_type>(), \
     "ResolveHandler type requirements not met"); int
 
 #define ASIO_WAIT_HANDLER_CHECK(handler_type, handler) \
   using asio::detail::handler_type_requirement; \
+  using asio_true_handler_type = ASIO_HANDLER_TYPE(handler_type, void(asio::error_code)); \
   static_assert( \
-    handler_type_requirement<void, asio::error_code>::check<decltype(handler)>(), \
+    handler_type_requirement<void, asio::error_code>::check<asio_true_handler_type>(), \
     "WaitHandler type requirements not met"); int
 
 #define ASIO_SIGNAL_HANDLER_CHECK(handler_type, handler) \
   using asio::detail::handler_type_requirement; \
+  using asio_true_handler_type = ASIO_HANDLER_TYPE(handler_type, void(asio::error_code, int)); \
   static_assert( \
-    handler_type_requirement<void, asio::error_code, int>::check<decltype(handler)>(), \
+    handler_type_requirement<void, asio::error_code, int>::check<asio_true_handler_type>(), \
     "SignalHandler type requirements not met"); int
 
 #define ASIO_HANDSHAKE_HANDLER_CHECK(handler_type, handler) \
   using asio::detail::handler_type_requirement; \
+  using asio_true_handler_type = ASIO_HANDLER_TYPE(handler_type, void(asio::error_code)); \
   static_assert( \
-    handler_type_requirement<void, asio::error_code>::check<decltype(handler)>(), \
+    handler_type_requirement<void, asio::error_code>::check<asio_true_handler_type>(), \
     "HandshakeHandler type requirements not met"); int
 
 #define ASIO_BUFFERED_HANDSHAKE_HANDLER_CHECK(handler_type, handler) \
   using asio::detail::handler_type_requirement; \
+  using asio_true_handler_type = ASIO_HANDLER_TYPE(handler_type, void(asio::error_code, std::size_t)); \
   static_assert( \
-    handler_type_requirement<void, asio::error_code, std::size_t>::check<decltype(handler)>(), \
+    handler_type_requirement<void, asio::error_code, std::size_t>::check<asio_true_handler_type>(), \
     "BufferedHandshakeHandler type requirements not met"); int
 
 #define ASIO_SHUTDOWN_HANDLER_CHECK(handler_type, handler) \
   using asio::detail::handler_type_requirement; \
+  using asio_true_handler_type = ASIO_HANDLER_TYPE(handler_type, void(asio::error_code)); \
   static_assert( \
-    handler_type_requirement<void, asio::error_code>::check<decltype(handler)>(), \
+    handler_type_requirement<void, asio::error_code>::check<asio_true_handler_type>(), \
     "ShutdownHandler type requirements not met"); int
 
 # endif // !defined(ASIO_MOVABLE_HANDLER_TYPE_CHECK)
