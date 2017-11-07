@@ -34,6 +34,33 @@
 namespace asio {
 namespace detail {
 
+#ifdef BOOST_COROUTINES_V2
+#ifndef ASIO_HAS_DECLTYPE
+#error "Boost.Coroutine2 requires C++11 or above"
+#endif
+
+struct is_coroutine_param_helper {
+  template <typename T> static char deduce(decltype(&decay<T>::type::allocate),
+                                           decltype(&decay<T>::type::deallocate));
+  template <typename T> static long deduce(...);
+};
+
+template <typename CoroParam> struct is_coroutine_param
+  : public integral_constant<bool,
+      sizeof(is_coroutine_param_helper::deduce<CoroParam>(0, 0)) == sizeof(char)>
+{
+};
+#else
+template <typename CoroParam> struct is_coroutine_param
+  : public integral_constant<bool, is_same<typename decay<CoroParam>::type, default_param>::value>
+{
+};
+#endif
+
+} // namespace detail
+
+namespace detail {
+
   template <typename Handler, typename T>
   class coro_handler
   {
@@ -392,35 +419,50 @@ namespace detail {
     shared_ptr<spawn_data<Handler, Function> > data_;
   };
 
-  template <typename Handler, typename Function>
+  template <typename Handler, typename Function, typename CoroParam>
   struct spawn_helper
   {
     typedef typename decay<Handler>::type handler_type;
     typedef typename basic_yield_context<handler_type>::callee_type callee_type;
 
+    spawn_helper(ASIO_MOVE_ARG(Handler) handler,
+        ASIO_MOVE_ARG(Function) function,
+        bool call_handler,
+        ASIO_MOVE_ARG(CoroParam) param)
+      : data_(new spawn_data<Handler, Function>(
+          ASIO_MOVE_CAST(Handler)(handler), call_handler,
+          ASIO_MOVE_CAST(Function)(function))),
+        param_(ASIO_MOVE_CAST(CoroParam)(param))
+    {
+    }
+
     void operator()()
     {
       coro_entry_point<Handler, Function> entry_point = { data_ };
-      shared_ptr<callee_type> coro(new callee_type(entry_point, attributes_));
+#ifdef BOOST_COROUTINES_V2
+      shared_ptr<callee_type> coro(new callee_type(param_, entry_point));
+#else
+      shared_ptr<callee_type> coro(new callee_type(entry_point, param_));
+#endif
       data_->coro_ = coro;
       (*coro)();
     }
 
     shared_ptr<spawn_data<Handler, Function> > data_;
-    boost::coroutines::attributes attributes_;
+    typename decay<CoroParam>::type param_;
   };
 
-  template <typename Function, typename Handler, typename Function1>
+  template <typename Function, typename Handler, typename Function1, typename CoroParam>
   inline void asio_handler_invoke(Function& function,
-      spawn_helper<Handler, Function1>* this_handler)
+      spawn_helper<Handler, Function1, CoroParam>* this_handler)
   {
     asio_handler_invoke_helpers::invoke(
         function, this_handler->data_->handler_);
   }
 
-  template <typename Function, typename Handler, typename Function1>
+  template <typename Function, typename Handler, typename Function1, typename CoroParam>
   inline void asio_handler_invoke(const Function& function,
-      spawn_helper<Handler, Function1>* this_handler)
+      spawn_helper<Handler, Function1, CoroParam>* this_handler)
   {
     asio_handler_invoke_helpers::invoke(
         function, this_handler->data_->handler_);
@@ -430,22 +472,26 @@ namespace detail {
 
 } // namespace detail
 
-template <typename Function>
+template <typename Function, typename CoroParam>
 inline void spawn(ASIO_MOVE_ARG(Function) function,
-    const boost::coroutines::attributes& attributes)
+    ASIO_MOVE_ARG(CoroParam) param,
+    typename enable_if<!detail::is_coroutine_param<Function>::value>::type*,
+    typename enable_if<detail::is_coroutine_param<CoroParam>::value>::type*)
 {
   typedef typename decay<Function>::type function_type;
 
   typename associated_executor<function_type>::type ex(
       (get_associated_executor)(function));
 
-  asio::spawn(ex, ASIO_MOVE_CAST(Function)(function), attributes);
+  asio::spawn(ex, ASIO_MOVE_CAST(Function)(function), ASIO_MOVE_CAST(CoroParam)(param));
 }
 
-template <typename Handler, typename Function>
+template <typename Handler, typename Function, typename CoroParam>
 void spawn(ASIO_MOVE_ARG(Handler) handler,
     ASIO_MOVE_ARG(Function) function,
-    const boost::coroutines::attributes& attributes,
+    ASIO_MOVE_ARG(CoroParam) param,
+    typename enable_if<!detail::is_coroutine_param<Function>::value>::type*,
+    typename enable_if<detail::is_coroutine_param<CoroParam>::value>::type*,
     typename enable_if<!is_executor<typename decay<Handler>::type>::value &&
       !is_convertible<Handler&, execution_context&>::value>::type*)
 {
@@ -457,20 +503,22 @@ void spawn(ASIO_MOVE_ARG(Handler) handler,
   typename associated_allocator<handler_type>::type a(
       (get_associated_allocator)(handler));
 
-  detail::spawn_helper<Handler, Function> helper;
-  helper.data_.reset(
-      new detail::spawn_data<Handler, Function>(
-        ASIO_MOVE_CAST(Handler)(handler), true,
-        ASIO_MOVE_CAST(Function)(function)));
-  helper.attributes_ = attributes;
+  detail::spawn_helper<Handler, Function, CoroParam> helper(
+    ASIO_MOVE_CAST(Handler)(handler),
+    ASIO_MOVE_CAST(Function)(function),
+    true,
+    ASIO_MOVE_CAST(CoroParam)(param)
+  );
 
   ex.dispatch(helper, a);
 }
 
-template <typename Handler, typename Function>
+template <typename Handler, typename Function, typename CoroParam>
 void spawn(basic_yield_context<Handler> ctx,
     ASIO_MOVE_ARG(Function) function,
-    const boost::coroutines::attributes& attributes)
+    ASIO_MOVE_ARG(CoroParam) param,
+    typename enable_if<!detail::is_coroutine_param<Function>::value>::type*,
+    typename enable_if<detail::is_coroutine_param<CoroParam>::value>::type*)
 {
   Handler handler(ctx.handler_); // Explicit copy that might be moved from.
 
@@ -480,55 +528,63 @@ void spawn(basic_yield_context<Handler> ctx,
   typename associated_allocator<Handler>::type a(
       (get_associated_allocator)(handler));
 
-  detail::spawn_helper<Handler, Function> helper;
-  helper.data_.reset(
-      new detail::spawn_data<Handler, Function>(
-        ASIO_MOVE_CAST(Handler)(handler), false,
-        ASIO_MOVE_CAST(Function)(function)));
-  helper.attributes_ = attributes;
+  detail::spawn_helper<Handler, Function, CoroParam> helper(
+    ASIO_MOVE_CAST(Handler)(handler),
+    ASIO_MOVE_CAST(Function)(function),
+    false,
+    ASIO_MOVE_CAST(CoroParam)(param)
+  );
 
   ex.dispatch(helper, a);
 }
 
-template <typename Function, typename Executor>
+template <typename Function, typename Executor, typename CoroParam>
 inline void spawn(const Executor& ex,
     ASIO_MOVE_ARG(Function) function,
-    const boost::coroutines::attributes& attributes,
+    ASIO_MOVE_ARG(CoroParam) param,
+    typename enable_if<!detail::is_coroutine_param<Function>::value>::type*,
+    typename enable_if<detail::is_coroutine_param<CoroParam>::value>::type*,
     typename enable_if<is_executor<Executor>::value>::type*)
 {
   asio::spawn(asio::strand<Executor>(ex),
-      ASIO_MOVE_CAST(Function)(function), attributes);
+      ASIO_MOVE_CAST(Function)(function), ASIO_MOVE_CAST(CoroParam)(param));
 }
 
-template <typename Function, typename Executor>
+template <typename Function, typename Executor, typename CoroParam>
 inline void spawn(const strand<Executor>& ex,
     ASIO_MOVE_ARG(Function) function,
-    const boost::coroutines::attributes& attributes)
+    ASIO_MOVE_ARG(CoroParam) param,
+    typename enable_if<!detail::is_coroutine_param<Function>::value>::type*,
+    typename enable_if<detail::is_coroutine_param<CoroParam>::value>::type*)
 {
   asio::spawn(asio::bind_executor(
         ex, &detail::default_spawn_handler),
-      ASIO_MOVE_CAST(Function)(function), attributes);
+      ASIO_MOVE_CAST(Function)(function), ASIO_MOVE_CAST(CoroParam)(param));
 }
 
-template <typename Function>
+template <typename Function, typename CoroParam>
 inline void spawn(const asio::io_context::strand& s,
     ASIO_MOVE_ARG(Function) function,
-    const boost::coroutines::attributes& attributes)
+    ASIO_MOVE_ARG(CoroParam) param,
+    typename enable_if<!detail::is_coroutine_param<Function>::value>::type*,
+    typename enable_if<detail::is_coroutine_param<CoroParam>::value>::type*)
 {
   asio::spawn(asio::bind_executor(
         s, &detail::default_spawn_handler),
-      ASIO_MOVE_CAST(Function)(function), attributes);
+      ASIO_MOVE_CAST(Function)(function), ASIO_MOVE_CAST(CoroParam)(param));
 }
 
-template <typename Function, typename ExecutionContext>
+template <typename Function, typename ExecutionContext, typename CoroParam>
 inline void spawn(ExecutionContext& ctx,
     ASIO_MOVE_ARG(Function) function,
-    const boost::coroutines::attributes& attributes,
+    ASIO_MOVE_ARG(CoroParam) param,
+    typename enable_if<!detail::is_coroutine_param<Function>::value>::type*,
+    typename enable_if<detail::is_coroutine_param<CoroParam>::value>::type*,
     typename enable_if<is_convertible<
       ExecutionContext&, execution_context&>::value>::type*)
 {
   asio::spawn(ctx.get_executor(),
-      ASIO_MOVE_CAST(Function)(function), attributes);
+      ASIO_MOVE_CAST(Function)(function), ASIO_MOVE_CAST(CoroParam)(param));
 }
 
 #endif // !defined(GENERATING_DOCUMENTATION)
